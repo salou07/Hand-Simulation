@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Biomechanical Hand Digital Twin Framework</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Bebas+Neue&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght=300;400&family=Bebas+Neue&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #0c0c10; --panel: #10101a; --border: #1a1a28;
@@ -120,11 +120,11 @@
 <header>
   <div>
     <div class="logo">Biomechanical Hand Model Framework</div>
-    <div class="tagline">High-Fidelity Digital Twin · Kinematic Calibration · MJCF Compatiable</div>
+    <div class="tagline">High-Fidelity Digital Twin · Kinematic Calibration · MJCF Compatible</div>
   </div>
   <div class="specs">
     <div class="spec"><div class="spec-num">29</div><div class="spec-lbl">Meshes</div></div>
-    <div class="spec"><div class="spec-num">24</div><div class="spec-lbl">Actuators</div></div>
+    <div class="spec"><div class="spec-num">25</div><div class="spec-lbl">Actuators</div></div>
     <div class="spec"><div class="spec-num">XML</div><div class="spec-lbl">Output</div></div>
   </div>
 </header>
@@ -182,11 +182,15 @@ fill.position.set(1, 0.5, 0.5); scene.add(fill);
 const rim = new THREE.DirectionalLight(0xffffff, 0.3);
 rim.position.set(0.3, 1, -0.5); scene.add(rim);
 
-// مطابقة كاملة للمحاور والإحداثيات من ملف XML المحدث
+// هيكلة شجرة العظام والمفاصل مأخوذة بالملي من ملف XML
 const BONES = [
   { name:'Ulna_bone_r', file:'Ulna_bone_r.stl', parent:null, joint:null },
   { name:'Radius_bone_r', file:'Radius_bone_r.stl', parent:'Ulna_bone_r', joint:'Forearm_Rotation', axis:[-0.003,-0.045,-0.217], pos:[-0.240,0.035,1.075] },
-  { name:'Scaphoid_bone_r', file:'Scaphoid_bone_r.stl', parent:'Radius_bone_r', joint:'Wrist_Flexion', axis:[1,0,0], pos:[-0.269,-0.012,0.860] },
+  
+  // سلسلة مفاصل المعصم المتداخلة (Flexion ثم Deviation) لمنع تداخل المحاور
+  { name:'Wrist_Flex_Helper', file:null, parent:'Radius_bone_r', joint:'Wrist_Flexion', axis:[1,0,0], pos:[-0.269,-0.012,0.860] },
+  { name:'Scaphoid_bone_r', file:'Scaphoid_bone_r.stl', parent:'Wrist_Flex_Helper', joint:'Wrist_Deviation', axis:[0,1,0], pos:[-0.269,-0.012,0.860] },
+  
   { name:'Lunate_bone_r', file:'Lunate_bone_r.stl', parent:'Scaphoid_bone_r', joint:null },
   { name:'Triquetrum_bone_r', file:'Triquetrum_bone_r.stl', parent:'Scaphoid_bone_r', joint:null },
   { name:'Pisiform_bone_r', file:'Pisiform_bone_r.stl', parent:'Scaphoid_bone_r', joint:null },
@@ -219,6 +223,7 @@ const SECTIONS = [
   { label:'Forearm & Wrist', joints:[
     { name:'Forearm Rotation', id:'Forearm_Rotation', min:-150, max:1 },
     { name:'Wrist Flexion / Extension', id:'Wrist_Flexion', min:-60, max:60 },
+    { name:'Wrist Deviation', id:'Wrist_Deviation', min:-15, max:30 },
   ]},
   { label:'Thumb Joints', joints:[
     { name:'Thumb CMC Flexion', id:'Thumb_CMC_flex_ext', min:-15, max:45 },
@@ -278,6 +283,7 @@ const loader = new STLLoader();
 let loaded = 0;
 
 await Promise.all(BONES.map(b => new Promise(res => {
+  if (!b.file) { res(); return; } // تخطي المجموعات المساعدة بدون ملفات
   loader.load(`assets/${b.file}`, geo => {
     geo.computeVertexNormals();
     boneGroups[b.name].add(new THREE.Mesh(geo, mat.clone()));
@@ -287,7 +293,6 @@ await Promise.all(BONES.map(b => new Promise(res => {
 
 document.getElementById('loading').classList.add('hidden');
 
-// بناء الواجهة التفاعلية بدون أرقام أو درجات نهائياً لحماية الملكية الفكرية
 const container = document.getElementById('controls');
 const sliders = {};
 
@@ -314,7 +319,6 @@ for (const sec of SECTIONS) {
       const deg = joint.min + (joint.max - joint.min) * slider.value / 100;
       setAngle(joint.id, deg);
 
-      // ترابط حركي طبيعي وثابت تلقائياً (Kinematic Coupling)
       for (const f of ['Index','Middle','Ring','Little']) {
         if (joint.id===`${f}_DIP`) { const p=deg*0.7; setAngle(`${f}_PIP`,p); setAngle(`${f}_MCP`,p*0.3); }
         else if (joint.id===`${f}_PIP`) setAngle(`${f}_MCP`,deg*0.3);
@@ -324,7 +328,7 @@ for (const sec of SECTIONS) {
     });
 
     row.appendChild(name);
-    row.appendChild(slider); // يتم إدخال المنزلق كخط رسومي فقط بدون عناصر نصية للأرقام
+    row.appendChild(slider);
     container.appendChild(row);
   }
 
