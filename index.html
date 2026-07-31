@@ -115,6 +115,15 @@
     cursor: pointer; transition: all 0.2s; text-transform: uppercase;
   }
   .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* عناصر الاتصال بالعتاد الخارجي */
+  #connect-btn { margin-top: 8px; }
+  #connect-btn.connected { border-color: #6ee7a8; color: #6ee7a8; }
+  #rawData {
+    font-size: 0.55rem; color: var(--muted); margin-top: 8px;
+    white-space: pre-wrap; word-break: break-all; max-height: 80px;
+    overflow-y: auto; line-height: 1.4;
+  }
 </style>
 </head>
 <body>
@@ -148,6 +157,8 @@
     <div class="panel-scroll" id="controls"></div>
     <div class="panel-bottom">
       <button class="reset-btn" id="reset-btn">↺ &nbsp;Reset Hand Telemetry</button>
+      <button class="reset-btn" id="connect-btn">🔌 &nbsp;Connect Hardware</button>
+      <pre id="rawData">—</pre>
     </div>
   </div>
 </div>
@@ -188,11 +199,11 @@ rim.position.set(0.3, 1, -0.5); scene.add(rim);
 const BONES = [
   { name:'Ulna_bone_r', file:'Ulna_bone_r.stl', parent:null, joint:null },
   { name:'Radius_bone_r', file:'Radius_bone_r.stl', parent:'Ulna_bone_r', joint:'Forearm_Rotation', axis:[-0.003,-0.045,-0.217], pos:[-0.240,0.035,1.075] },
-  
+
   // سلسلة مفاصل المعصم المتداخلة (Flexion ثم Deviation) لمنع تداخل المحاور
   { name:'Wrist_Flex_Helper', file:null, parent:'Radius_bone_r', joint:'Wrist_Flexion', axis:[1,0,0], pos:[-0.269,-0.012,0.860] },
   { name:'Scaphoid_bone_r', file:'Scaphoid_bone_r.stl', parent:'Wrist_Flex_Helper', joint:'Wrist_Deviation', axis:[0,1,0], pos:[-0.269,-0.012,0.860] },
-  
+
   { name:'Lunate_bone_r', file:'Lunate_bone_r.stl', parent:'Scaphoid_bone_r', joint:null },
   { name:'Triquetrum_bone_r', file:'Triquetrum_bone_r.stl', parent:'Scaphoid_bone_r', joint:null },
   { name:'Pisiform_bone_r', file:'Pisiform_bone_r.stl', parent:'Scaphoid_bone_r', joint:null },
@@ -279,6 +290,56 @@ function setAngle(id, deg) {
   const p = pivots[id];
   if (p) p.setRotationFromAxisAngle(p.userData.axis, THREE.MathUtils.degToRad(deg));
 }
+
+/* ============================================================
+   الاتصال بالعتاد الخارجي (Web Serial API)
+   - كل مستخدم يتصل بعتاده الخاص مباشرة من متصفحه، بدون سيرفر وسيط.
+   - هذه المرحلة تكتفي بعرض البيانات الخام فقط، بدون ربطها بالمفاصل بعد.
+   - يعمل فقط على Chrome / Edge (سطح المكتب أساسًا).
+   ============================================================ */
+let serialPort, serialReader;
+const connectBtn = document.getElementById('connect-btn');
+const rawDataEl = document.getElementById('rawData');
+
+async function connectHardware() {
+  if (!('serial' in navigator)) {
+    rawDataEl.textContent = 'المتصفح لا يدعم Web Serial API. استخدم Chrome أو Edge.';
+    return;
+  }
+  try {
+    serialPort = await navigator.serial.requestPort();
+    await serialPort.open({ baudRate: 115200 });
+
+    const decoder = new TextDecoderStream();
+    serialPort.readable.pipeTo(decoder.writable);
+    serialReader = decoder.readable.getReader();
+
+    connectBtn.textContent = '● Connected';
+    connectBtn.classList.add('connected');
+    rawDataEl.textContent = 'متصل، بانتظار بيانات...';
+    readSerialLoop();
+  } catch (err) {
+    rawDataEl.textContent = 'فشل الاتصال: ' + err;
+  }
+}
+
+async function readSerialLoop() {
+  try {
+    while (true) {
+      const { value, done } = await serialReader.read();
+      if (done) break;
+      if (value) rawDataEl.textContent = value;
+      // الخطوة القادمة (لاحقًا): تحليل value وتحويله لزوايا،
+      // ثم استدعاء setAngle(jointId, angleDeg) لكل مفصل.
+    }
+  } catch (err) {
+    rawDataEl.textContent = 'انقطع الاتصال: ' + err;
+    connectBtn.textContent = '🔌 Connect Hardware';
+    connectBtn.classList.remove('connected');
+  }
+}
+
+connectBtn.addEventListener('click', connectHardware);
 
 const mat = new THREE.MeshStandardMaterial({ color:0xd8c8b0, roughness:0.45, metalness:0.08 });
 const loader = new STLLoader();
